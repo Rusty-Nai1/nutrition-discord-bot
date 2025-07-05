@@ -44,12 +44,17 @@ class NutritionBot:
                     timeout=self.api_timeout
                 )
                 
-                if response.status_code == 200:
-                    data = response.json()
-                    return data.get('response', 'No response received')
-                else:
-                    logger.error(f"API returned status {response.status_code}")
-                    raise requests.exceptions.RequestException(f"API error: {response.status_code}")
+              if response.status_code == 200:
+    data = response.json()
+    # Handle Lambda response format
+    if 'body' in data:
+        # Parse the stringified JSON body
+        import json
+        body_data = json.loads(data['body'])
+        return body_data.get('response', 'No response received')
+    else:
+        # Direct response format
+        return data.get('response', 'No response received')
                     
             except requests.exceptions.Timeout:
                 logger.warning(f"API timeout on attempt {attempt + 1}")
