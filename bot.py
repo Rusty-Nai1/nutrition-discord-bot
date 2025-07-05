@@ -44,17 +44,20 @@ class NutritionBot:
                     timeout=self.api_timeout
                 )
                 
-              if response.status_code == 200:
-    data = response.json()
-    # Handle Lambda response format
-    if 'body' in data:
-        # Parse the stringified JSON body
-        import json
-        body_data = json.loads(data['body'])
-        return body_data.get('response', 'No response received')
-    else:
-        # Direct response format
-        return data.get('response', 'No response received')
+                if response.status_code == 200:
+                    data = response.json()
+                    # Handle Lambda response format
+                    if 'body' in data:
+                        # Parse the stringified JSON body
+                        import json
+                        body_data = json.loads(data['body'])
+                        return body_data.get('response', 'No response received')
+                    else:
+                        # Direct response format
+                        return data.get('response', 'No response received')
+                else:
+                    logger.error(f"API returned status {response.status_code}")
+                    raise requests.exceptions.RequestException(f"API error: {response.status_code}")
                     
             except requests.exceptions.Timeout:
                 logger.warning(f"API timeout on attempt {attempt + 1}")
@@ -128,16 +131,17 @@ async def on_ready():
 async def handle_nutrition_command(interaction: discord.Interaction, command: str, details: str):
     """Handle nutrition command with error handling"""
     
+    # DEFER IMMEDIATELY - CRITICAL for Discord timeout
+    await interaction.response.defer()
+    
     if not details or len(details.strip()) < 3:
         embed = nutrition_bot.create_error_embed(
             "Missing Details",
             f"Please provide details for your {command.replace('_', ' ')} request.\n\n"
             f"Example: `/{command} 10 hour night shift, need energy boost`"
         )
-        await interaction.response.send_message(embed=embed, ephemeral=True)
+        await interaction.followup.send(embed=embed, ephemeral=True)
         return
-    
-    await interaction.response.defer()
     
     try:
         advice = await nutrition_bot.call_lambda_api(command, details)
