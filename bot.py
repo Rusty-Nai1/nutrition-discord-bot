@@ -96,10 +96,13 @@ class SimpleHandler:
                             custom_id=component.get('custom_id')
                         )
                         
-                        async def button_callback(interaction: discord.Interaction):
-                            await self.handle_interaction(interaction)
+                        # Fix closure issue with proper binding
+                        def make_callback(handler):
+                            async def button_callback(interaction: discord.Interaction):
+                                await handler.handle_interaction(interaction)
+                            return button_callback
                         
-                        button.callback = button_callback
+                        button.callback = make_callback(self)
                         view.add_item(button)
         
         return view
