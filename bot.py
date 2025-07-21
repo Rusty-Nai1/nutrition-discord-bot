@@ -24,25 +24,19 @@ if not LAMBDA_ENDPOINT:
 
 class InteractionHandler:
    def __init__(self):
-       self.api_timeout = 25  # Reduced to leave buffer for Discord's 30s limit
+       self.api_timeout = 25
        self.max_retries = 2
    
    def is_interaction_valid(self, interaction: discord.Interaction) -> bool:
-       """Check if interaction is still valid (not expired)"""
        try:
-           # Check if interaction response is already done or expired
            if interaction.response.is_done():
-               return True  # Already responded, can use followup
-           
-           # Check if we're within Discord's 3-second initial response window
-           # This is approximate - Discord's 15-minute token is separate from 3s response window
+               return True
            return True
        except Exception as e:
            logger.warning(f"Error checking interaction validity: {e}")
            return False
    
    def serialize_interaction(self, interaction: discord.Interaction) -> dict:
-       """Convert Discord interaction to JSON-serializable format"""
        data = {
            "id": str(interaction.id),
            "application_id": str(interaction.application_id),
@@ -124,9 +118,9 @@ class InteractionHandler:
        view = discord.ui.View(timeout=300)
        
        for component_row in components:
-           if component_row.get('type') == 1:  # Action Row
+           if component_row.get('type') == 1:
                for component in component_row.get('components', []):
-                   if component.get('type') == 2:  # Button
+                   if component.get('type') == 2:
                        button = discord.ui.Button(
                            style=getattr(discord.ButtonStyle, 
                                        ['primary', 'secondary', 'success', 'danger', 'link'][component.get('style', 1) - 1]),
@@ -153,9 +147,9 @@ class InteractionHandler:
                self.custom_id = modal_data.get('custom_id', '')
                
                for component_row in modal_data.get('components', []):
-                   if component_row.get('type') == 1:  # Action Row
+                   if component_row.get('type') == 1:
                        for component in component_row.get('components', []):
-                           if component.get('type') == 4:  # Text Input
+                           if component.get('type') == 4:
                                text_input = discord.ui.TextInput(
                                    label=component.get('label', ''),
                                    placeholder=component.get('placeholder', ''),
@@ -167,20 +161,11 @@ class InteractionHandler:
                                self.add_item(text_input)
            
            async def on_submit(self, interaction: discord.Interaction):
-               print(f"DEBUG: Modal submission - interaction type: {type(interaction)}")
-               print(f"DEBUG: Modal submission - interaction value: {interaction}")
-               print(f"DEBUG: Modal submission - interaction.response: {getattr(interaction, 'response', 'NO_RESPONSE')}")
-               try:
-                   await self.handler.handle_interaction(interaction)
-               except Exception as e:
-                   print(f"DEBUG: Exception in modal submission: {e}")
-                   import traceback
-                   traceback.print_exc()
+               await self.handler.handle_interaction(interaction)
        
        return DynamicModal(modal_data, self)
    
    async def safe_defer(self, interaction: discord.Interaction, ephemeral: bool = False) -> bool:
-       """Safely defer an interaction if possible"""
        try:
            if not interaction.response.is_done():
                await interaction.response.defer(ephemeral=ephemeral)
@@ -202,10 +187,8 @@ class InteractionHandler:
    async def safe_send_response(self, interaction: discord.Interaction, content: str = None, 
                               embeds: list = None, view: discord.ui.View = None, 
                               ephemeral: bool = False) -> bool:
-       """Safely send a response via followup or edit"""
        try:
            if interaction.response.is_done():
-               # Use followup if already responded
                if embeds:
                    await interaction.followup.send(content=content, embeds=embeds, view=view, ephemeral=ephemeral)
                else:
@@ -213,7 +196,6 @@ class InteractionHandler:
                logger.info(f"Sent followup for interaction {interaction.id}")
                return True
            else:
-               # Use original response if not yet responded
                if embeds:
                    await interaction.response.send_message(content=content, embeds=embeds, view=view, ephemeral=ephemeral)
                else:
@@ -234,12 +216,10 @@ class InteractionHandler:
        interaction_start_time = datetime.now()
        
        try:
-           # Check interaction validity
            if not self.is_interaction_valid(interaction):
                logger.error(f"Invalid interaction {interaction.id}")
                return
            
-           # CRITICAL FIX: Defer modal submissions immediately
            if interaction.type == discord.InteractionType.modal_submit:
                logger.info(f"Modal submission detected - deferring immediately")
                deferred = await self.safe_defer(interaction)
@@ -247,11 +227,9 @@ class InteractionHandler:
                    logger.error("Failed to defer modal submission")
                    return
            
-           # Serialize the raw Discord interaction
            interaction_data = self.serialize_interaction(interaction)
            logger.info(f"Processing interaction {interaction.id} type {interaction.type}")
            
-           # Forward to Lambda with timeout handling
            try:
                lambda_response = await asyncio.wait_for(
                    self.call_lambda(interaction_data), 
@@ -262,12 +240,10 @@ class InteractionHandler:
            
            logger.info(f"Lambda response received for {interaction.id}")
            
-           # Process Lambda response
            response_type = lambda_response.get('type', 4)
            logger.info(f"Processing response type: {response_type}")
            
-           # CRITICAL: Handle modals FIRST - cannot defer modal responses
-           if response_type == 9:  # MODAL
+           if response_type == 9:
                logger.info("Processing MODAL response")
                if interaction.response.is_done():
                    logger.error("Cannot send modal - interaction already responded")
@@ -286,11 +262,10 @@ class InteractionHandler:
                    logger.error(f"Error creating/sending modal: {e}")
                    return
            
-           # For non-modal responses, defer if not already done
            if interaction.type != discord.InteractionType.modal_submit:
                deferred = await self.safe_defer(interaction)
            
-           if response_type == 4:  # CHANNEL_MESSAGE_WITH_SOURCE
+           if response_type == 4:
                logger.info("Processing CHANNEL_MESSAGE_WITH_SOURCE response")
                data = lambda_response.get('data', {})
                content = data.get('content', '')
@@ -328,15 +303,15 @@ class InteractionHandler:
                if not success:
                    logger.error("Failed to send message response")
            
-           elif response_type == 5:  # DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE
+           elif response_type == 5:
                logger.info("Processing DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE - already deferred")
                pass
            
-           elif response_type == 6:  # DEFERRED_UPDATE_MESSAGE
+           elif response_type == 6:
                logger.info("Processing DEFERRED_UPDATE_MESSAGE - already deferred")
                pass
            
-           elif response_type == 7:  # UPDATE_MESSAGE
+           elif response_type == 7:
                logger.info("Processing UPDATE_MESSAGE response")
                data = lambda_response.get('data', {})
                content = data.get('content', '')
@@ -375,7 +350,6 @@ class InteractionHandler:
            else:
                logger.warning(f"Unknown response type: {response_type}")
            
-           # Log processing time
            processing_time = (datetime.now() - interaction_start_time).total_seconds()
            logger.info(f"Interaction {interaction.id} processed in {processing_time:.2f}s")
            
@@ -390,7 +364,6 @@ class InteractionHandler:
            
        except discord.errors.NotFound:
            logger.error(f"Interaction {interaction.id} token expired")
-           # Cannot respond to expired interaction
            
        except Exception as e:
            logger.error(f"Error handling interaction {interaction.id}: {e}")
@@ -406,10 +379,13 @@ handler = InteractionHandler()
 @bot.event
 async def on_ready():
    logger.info(f'{bot.user} connected to Discord!')
+   
+   # Wait for guild cache to populate
+   await asyncio.sleep(3)
+   
    logger.info(f'Bot is in {len(bot.guilds)} servers')
    
    try:
-       bot.tree.clear_commands(guild=None)  # Clear old commands
        synced = await bot.tree.sync()
        logger.info(f'Synced {len(synced)} slash commands')
    except Exception as e:
@@ -421,6 +397,11 @@ async def on_ready():
            name="for /hi and /hola"
        )
    )
+
+@bot.event
+async def on_guild_available(guild):
+   logger.info(f'Guild available: {guild.name} (ID: {guild.id})')
+   logger.info(f'Bot is now in {len(bot.guilds)} servers')
 
 @bot.tree.command(name="hi", description="Start a conversation in English")
 async def hi(interaction: discord.Interaction):
