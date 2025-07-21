@@ -167,7 +167,15 @@ class InteractionHandler:
                                 self.add_item(text_input)
             
             async def on_submit(self, interaction: discord.Interaction):
-                await self.handler.handle_interaction(interaction)
+                print(f"DEBUG: Modal submission - interaction type: {type(interaction)}")
+                print(f"DEBUG: Modal submission - interaction value: {interaction}")
+                print(f"DEBUG: Modal submission - interaction.response: {getattr(interaction, 'response', 'NO_RESPONSE')}")
+                try:
+                    await self.handler.handle_interaction(interaction)
+                except Exception as e:
+                    print(f"DEBUG: Exception in modal submission: {e}")
+                    import traceback
+                    traceback.print_exc()
         
         return DynamicModal(modal_data, self)
     
@@ -231,6 +239,14 @@ class InteractionHandler:
                 logger.error(f"Invalid interaction {interaction.id}")
                 return
             
+            # CRITICAL FIX: Defer modal submissions immediately
+            if interaction.type == discord.InteractionType.modal_submit:
+                logger.info(f"Modal submission detected - deferring immediately")
+                deferred = await self.safe_defer(interaction)
+                if not deferred:
+                    logger.error("Failed to defer modal submission")
+                    return
+            
             # Serialize the raw Discord interaction
             interaction_data = self.serialize_interaction(interaction)
             logger.info(f"Processing interaction {interaction.id} type {interaction.type}")
@@ -270,8 +286,9 @@ class InteractionHandler:
                     logger.error(f"Error creating/sending modal: {e}")
                     return
             
-            # For all non-modal responses, try to defer first
-            deferred = await self.safe_defer(interaction)
+            # For non-modal responses, defer if not already done
+            if interaction.type != discord.InteractionType.modal_submit:
+                deferred = await self.safe_defer(interaction)
             
             if response_type == 4:  # CHANNEL_MESSAGE_WITH_SOURCE
                 logger.info("Processing CHANNEL_MESSAGE_WITH_SOURCE response")
@@ -392,6 +409,7 @@ async def on_ready():
     logger.info(f'Bot is in {len(bot.guilds)} servers')
     
     try:
+        bot.tree.clear_commands(guild=None)  # Clear old commands
         synced = await bot.tree.sync()
         logger.info(f'Synced {len(synced)} slash commands')
     except Exception as e:
