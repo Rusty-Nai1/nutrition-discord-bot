@@ -173,22 +173,38 @@ class SimpleHandler:
                 if 'components' in data:
                     view = self.create_buttons(data['components'])
                 
-                # Send response
+                # Send response - check if already responded
                 ephemeral = data.get('flags', 0) & 64 == 64
                 
-                if embeds:
-                    await interaction.response.send_message(
-                        content=content, 
-                        embeds=embeds, 
-                        view=view, 
-                        ephemeral=ephemeral
-                    )
+                if not interaction.response.is_done():
+                    if embeds:
+                        await interaction.response.send_message(
+                            content=content, 
+                            embeds=embeds, 
+                            view=view, 
+                            ephemeral=ephemeral
+                        )
+                    else:
+                        await interaction.response.send_message(
+                            content=content, 
+                            view=view, 
+                            ephemeral=ephemeral
+                        )
                 else:
-                    await interaction.response.send_message(
-                        content=content, 
-                        view=view, 
-                        ephemeral=ephemeral
-                    )
+                    # Use followup if already responded
+                    if embeds:
+                        await interaction.followup.send(
+                            content=content, 
+                            embeds=embeds, 
+                            view=view, 
+                            ephemeral=ephemeral
+                        )
+                    else:
+                        await interaction.followup.send(
+                            content=content, 
+                            view=view, 
+                            ephemeral=ephemeral
+                        )
                 
                 logger.info("Message sent successfully")
                 return
