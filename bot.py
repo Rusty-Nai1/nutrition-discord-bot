@@ -158,11 +158,6 @@ class InteractionHandler:
         return DynamicModal(modal_data, self)
     
     async def handle_interaction(self, interaction: discord.Interaction):
-        # DEFER IMMEDIATELY - Critical for timeout prevention
-        if not interaction.response.is_done():
-            await interaction.response.defer()
-            logger.info(f"Deferred interaction {interaction.id}")
-        
         try:
             # Serialize the raw Discord interaction
             interaction_data = self.serialize_interaction(interaction)
@@ -175,6 +170,25 @@ class InteractionHandler:
             # Process Lambda response
             response_type = lambda_response.get('type', 4)
             logger.info(f"Processing response type: {response_type}")
+            
+            # CRITICAL FIX: Check response type BEFORE deferring
+            if response_type == 9:  # MODAL - Cannot defer modal responses
+                logger.info("Processing MODAL response")
+                modal_data = lambda_response.get('data', {})
+                logger.info(f"Modal data: {modal_data}")
+                try:
+                    modal = self.create_modal_from_data(modal_data)
+                    await interaction.response.send_modal(modal)
+                    logger.info("Successfully sent modal")
+                except Exception as e:
+                    logger.error(f"Error creating/sending modal: {e}")
+                    logger.error(f"Modal data: {modal_data}")
+                return
+            
+            # DEFER for all non-modal responses
+            if not interaction.response.is_done():
+                await interaction.response.defer()
+                logger.info(f"Deferred interaction {interaction.id}")
             
             if response_type == 4:  # CHANNEL_MESSAGE_WITH_SOURCE
                 logger.info("Processing CHANNEL_MESSAGE_WITH_SOURCE response")
@@ -239,30 +253,12 @@ class InteractionHandler:
                     logger.error(f"Unexpected error in followup.send: {e}")
                     logger.error(f"Error type: {type(e)}")
             
-            elif response_type == 9:  # MODAL
-                logger.info("Processing MODAL response")
-                modal_data = lambda_response.get('data', {})
-                logger.info(f"Modal data: {modal_data}")
-                try:
-                    modal = self.create_modal_from_data(modal_data)
-                    # Can't defer modal response, must send immediately
-                    if not interaction.response.is_done():
-                        await interaction.response.send_modal(modal)
-                        logger.info("Successfully sent modal")
-                    else:
-                        logger.error("Cannot send modal - interaction already responded")
-                except Exception as e:
-                    logger.error(f"Error creating/sending modal: {e}")
-                    logger.error(f"Modal data: {modal_data}")
-            
             elif response_type == 5:  # DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE
                 logger.info("Processing DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE - already deferred")
-                # Already deferred above, no additional action needed
                 pass
             
             elif response_type == 6:  # DEFERRED_UPDATE_MESSAGE
                 logger.info("Processing DEFERRED_UPDATE_MESSAGE - already deferred")
-                # Already deferred above, no additional action needed
                 pass
             
             elif response_type == 7:  # UPDATE_MESSAGE
@@ -313,6 +309,8 @@ class InteractionHandler:
             logger.info(f"Successfully handled interaction for {interaction.user}")
             
         except TimeoutError:
+            if not interaction.response.is_done():
+                await interaction.response.defer()
             embed = discord.Embed(
                 title="⏰ Timeout",
                 description="Request timed out. Please try again!",
@@ -325,6 +323,8 @@ class InteractionHandler:
             
         except Exception as e:
             logger.error(f"Error handling interaction: {e}")
+            if not interaction.response.is_done():
+                await interaction.response.defer()
             embed = discord.Embed(
                 title="❌ Error",
                 description="Something went wrong. Please try again later!",
