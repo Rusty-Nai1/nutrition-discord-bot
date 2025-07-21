@@ -165,10 +165,10 @@ class InteractionHandler:
        
        return DynamicModal(modal_data, self)
    
-   async def safe_defer(self, interaction: discord.Interaction, ephemeral: bool = False) -> bool:
+   async def safe_defer(self, interaction: discord.Interaction, ephemeral: bool = False, thinking: bool = False) -> bool:
        try:
            if not interaction.response.is_done():
-               await interaction.response.defer(ephemeral=ephemeral)
+               await interaction.response.defer(ephemeral=ephemeral, thinking=thinking)
                logger.info(f"Successfully deferred interaction {interaction.id}")
                return True
            else:
@@ -219,9 +219,10 @@ class InteractionHandler:
                logger.error(f"Invalid interaction {interaction.id}")
                return
            
+           # Show thinking indicator for modal submissions
            if interaction.type == discord.InteractionType.modal_submit:
-               logger.info(f"Modal submission detected - deferring immediately")
-               deferred = await self.safe_defer(interaction)
+               logger.info(f"Modal submission detected - deferring with thinking indicator")
+               deferred = await self.safe_defer(interaction, thinking=True)
                if not deferred:
                    logger.error("Failed to defer modal submission")
                    return
@@ -261,6 +262,7 @@ class InteractionHandler:
                    logger.error(f"Error creating/sending modal: {e}")
                    return
            
+           # Defer non-modal interactions without thinking indicator
            if interaction.type != discord.InteractionType.modal_submit:
                deferred = await self.safe_defer(interaction)
            
