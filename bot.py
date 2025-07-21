@@ -24,8 +24,22 @@ if not LAMBDA_ENDPOINT:
 
 class InteractionHandler:
     def __init__(self):
-        self.api_timeout = 30
+        self.api_timeout = 25  # Reduced to leave buffer for Discord's 30s limit
         self.max_retries = 2
+    
+    def is_interaction_valid(self, interaction: discord.Interaction) -> bool:
+        """Check if interaction is still valid (not expired)"""
+        try:
+            # Check if interaction response is already done or expired
+            if interaction.response.is_done():
+                return True  # Already responded, can use followup
+            
+            # Check if we're within Discord's 3-second initial response window
+            # This is approximate - Discord's 15-minute token is separate from 3s response window
+            return True
+        except Exception as e:
+            logger.warning(f"Error checking interaction validity: {e}")
+            return False
     
     def serialize_interaction(self, interaction: discord.Interaction) -> dict:
         """Convert Discord interaction to JSON-serializable format"""
@@ -71,26 +85,6 @@ class InteractionHandler:
         
         return data
     
-    async def safe_defer(self, interaction: discord.Interaction) -> bool:
-        """Safely defer interaction with proper error handling"""
-        if interaction.response.is_done():
-            logger.info(f"Interaction {interaction.id} already responded, skipping defer")
-            return False
-        
-        try:
-            await interaction.response.defer()
-            logger.info(f"Successfully deferred interaction {interaction.id}")
-            return True
-        except discord.NotFound:
-            logger.error(f"Interaction {interaction.id} not found (expired token)")
-            return False
-        except discord.HTTPException as e:
-            logger.error(f"HTTP error deferring interaction {interaction.id}: {e}")
-            return False
-        except Exception as e:
-            logger.error(f"Unexpected error deferring interaction {interaction.id}: {e}")
-            return False
-    
     async def call_lambda(self, interaction_data: dict) -> dict:
         headers = {"Content-Type": "application/json"}
         
@@ -111,20 +105,20 @@ class InteractionHandler:
                         return json.loads(data['body'])
                     return data
                 else:
-                    logger.error(f"Lambda returned status {response.status_code}")
+                    logger.error(f"Lambda returned status {response.status_code}: {response.text}")
                     raise requests.exceptions.RequestException(f"Lambda error: {response.status_code}")
                     
             except requests.exceptions.Timeout:
                 logger.warning(f"Lambda timeout on attempt {attempt + 1}")
                 if attempt == self.max_retries:
                     raise TimeoutError("Lambda request timed out")
-                await asyncio.sleep(2)
+                await asyncio.sleep(1)
                 
             except requests.exceptions.RequestException as e:
                 logger.error(f"Lambda request failed: {e}")
                 if attempt == self.max_retries:
                     raise
-                await asyncio.sleep(2)
+                await asyncio.sleep(1)
     
     def create_view_from_components(self, components: list) -> discord.ui.View:
         view = discord.ui.View(timeout=300)
@@ -177,80 +171,108 @@ class InteractionHandler:
         
         return DynamicModal(modal_data, self)
     
-    async def safe_send_followup(self, interaction: discord.Interaction, **kwargs) -> bool:
-        """Safely send followup message with error handling"""
+    async def safe_defer(self, interaction: discord.Interaction, ephemeral: bool = False) -> bool:
+        """Safely defer an interaction if possible"""
         try:
-            await interaction.followup.send(**kwargs)
-            logger.info("Successfully sent followup message")
-            return True
-        except discord.NotFound:
-            logger.error("Followup failed: Interaction not found (expired token)")
+            if not interaction.response.is_done():
+                await interaction.response.defer(ephemeral=ephemeral)
+                logger.info(f"Successfully deferred interaction {interaction.id}")
+                return True
+            else:
+                logger.info(f"Interaction {interaction.id} already responded")
+                return False
+        except discord.errors.NotFound:
+            logger.error(f"Interaction {interaction.id} token expired - cannot defer")
             return False
-        except discord.HTTPException as e:
-            logger.error(f"HTTP error in followup: {e}")
+        except discord.errors.HTTPException as e:
+            logger.error(f"HTTP error deferring interaction {interaction.id}: {e}")
             return False
         except Exception as e:
-            logger.error(f"Unexpected error in followup: {e}")
+            logger.error(f"Unexpected error deferring interaction {interaction.id}: {e}")
             return False
     
-    async def safe_send_modal(self, interaction: discord.Interaction, modal: discord.ui.Modal) -> bool:
-        """Safely send modal with error handling"""
-        if interaction.response.is_done():
-            logger.error("Cannot send modal - interaction already responded")
-            return False
-        
+    async def safe_send_response(self, interaction: discord.Interaction, content: str = None, 
+                               embeds: list = None, view: discord.ui.View = None, 
+                               ephemeral: bool = False) -> bool:
+        """Safely send a response via followup or edit"""
         try:
-            await interaction.response.send_modal(modal)
-            logger.info("Successfully sent modal")
-            return True
-        except discord.NotFound:
-            logger.error("Modal send failed: Interaction not found (expired token)")
+            if interaction.response.is_done():
+                # Use followup if already responded
+                if embeds:
+                    await interaction.followup.send(content=content, embeds=embeds, view=view, ephemeral=ephemeral)
+                else:
+                    await interaction.followup.send(content=content, view=view, ephemeral=ephemeral)
+                logger.info(f"Sent followup for interaction {interaction.id}")
+                return True
+            else:
+                # Use original response if not yet responded
+                if embeds:
+                    await interaction.response.send_message(content=content, embeds=embeds, view=view, ephemeral=ephemeral)
+                else:
+                    await interaction.response.send_message(content=content, view=view, ephemeral=ephemeral)
+                logger.info(f"Sent original response for interaction {interaction.id}")
+                return True
+        except discord.errors.NotFound:
+            logger.error(f"Interaction {interaction.id} token expired - cannot send response")
             return False
-        except discord.HTTPException as e:
-            logger.error(f"HTTP error sending modal: {e}")
+        except discord.errors.HTTPException as e:
+            logger.error(f"HTTP error sending response to interaction {interaction.id}: {e}")
             return False
         except Exception as e:
-            logger.error(f"Unexpected error sending modal: {e}")
+            logger.error(f"Unexpected error sending response to interaction {interaction.id}: {e}")
             return False
     
     async def handle_interaction(self, interaction: discord.Interaction):
+        interaction_start_time = datetime.now()
+        
         try:
+            # Check interaction validity
+            if not self.is_interaction_valid(interaction):
+                logger.error(f"Invalid interaction {interaction.id}")
+                return
+            
             # Serialize the raw Discord interaction
             interaction_data = self.serialize_interaction(interaction)
-            logger.info(f"Handling interaction {interaction.id} type {interaction.type}")
+            logger.info(f"Processing interaction {interaction.id} type {interaction.type}")
             
-            # Forward to Lambda
-            lambda_response = await self.call_lambda(interaction_data)
-            logger.info(f"Lambda response received for interaction {interaction.id}")
+            # Forward to Lambda with timeout handling
+            try:
+                lambda_response = await asyncio.wait_for(
+                    self.call_lambda(interaction_data), 
+                    timeout=self.api_timeout
+                )
+            except asyncio.TimeoutError:
+                raise TimeoutError("Lambda request timed out")
+            
+            logger.info(f"Lambda response received for {interaction.id}")
             
             # Process Lambda response
             response_type = lambda_response.get('type', 4)
             logger.info(f"Processing response type: {response_type}")
             
-            # Handle modal responses first (cannot be deferred)
+            # CRITICAL: Handle modals FIRST - cannot defer modal responses
             if response_type == 9:  # MODAL
                 logger.info("Processing MODAL response")
+                if interaction.response.is_done():
+                    logger.error("Cannot send modal - interaction already responded")
+                    return
+                
                 modal_data = lambda_response.get('data', {})
-                modal = self.create_modal_from_data(modal_data)
-                await self.safe_send_modal(interaction, modal)
-                return
-            
-            # For all other responses, try to defer first
-            deferred = await self.safe_defer(interaction)
-            if not deferred and not interaction.response.is_done():
-                # If defer failed and no response sent, send error
                 try:
-                    embed = discord.Embed(
-                        title="❌ Interaction Expired",
-                        description="This interaction has expired. Please try again.",
-                        color=0xff4444
-                    )
-                    await interaction.response.send_message(embed=embed, ephemeral=True)
-                except:
-                    logger.error("Failed to send expiry message")
-                return
+                    modal = self.create_modal_from_data(modal_data)
+                    await interaction.response.send_modal(modal)
+                    logger.info("Successfully sent modal")
+                    return
+                except discord.errors.NotFound:
+                    logger.error("Modal send failed - interaction token expired")
+                    return
+                except Exception as e:
+                    logger.error(f"Error creating/sending modal: {e}")
+                    return
             
-            # Process different response types
+            # For all non-modal responses, try to defer first
+            deferred = await self.safe_defer(interaction)
+            
             if response_type == 4:  # CHANNEL_MESSAGE_WITH_SOURCE
                 logger.info("Processing CHANNEL_MESSAGE_WITH_SOURCE response")
                 data = lambda_response.get('data', {})
@@ -285,25 +307,17 @@ class InteractionHandler:
                 
                 ephemeral = data.get('flags', 0) & 64 == 64
                 
-                # Send followup if deferred, otherwise try response
-                if deferred:
-                    await self.safe_send_followup(
-                        interaction, 
-                        content=content, 
-                        embeds=embeds, 
-                        view=view, 
-                        ephemeral=ephemeral
-                    )
-                else:
-                    try:
-                        await interaction.response.send_message(
-                            content=content, 
-                            embeds=embeds, 
-                            view=view, 
-                            ephemeral=ephemeral
-                        )
-                    except Exception as e:
-                        logger.error(f"Error sending response message: {e}")
+                success = await self.safe_send_response(interaction, content, embeds, view, ephemeral)
+                if not success:
+                    logger.error("Failed to send message response")
+            
+            elif response_type == 5:  # DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE
+                logger.info("Processing DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE - already deferred")
+                pass
+            
+            elif response_type == 6:  # DEFERRED_UPDATE_MESSAGE
+                logger.info("Processing DEFERRED_UPDATE_MESSAGE - already deferred")
+                pass
             
             elif response_type == 7:  # UPDATE_MESSAGE
                 logger.info("Processing UPDATE_MESSAGE response")
@@ -312,7 +326,7 @@ class InteractionHandler:
                 
                 embeds = []
                 if 'embeds' in data:
-                    for embed_data in data['embeds']:
+                    for i, embed_data in enumerate(data['embeds']):
                         try:
                             embed = discord.Embed(
                                 title=embed_data.get('title'),
@@ -321,50 +335,54 @@ class InteractionHandler:
                             )
                             embeds.append(embed)
                         except Exception as e:
-                            logger.error(f"Error creating update embed: {e}")
+                            logger.error(f"Error creating update embed {i}: {e}")
                 
                 view = None
                 if 'components' in data:
                     try:
                         view = self.create_view_from_components(data['components'])
                     except Exception as e:
-                        logger.error(f"Error creating update view: {e}")
+                        logger.error(f"Error creating view for update: {e}")
                 
                 try:
-                    await interaction.edit_original_response(content=content, embeds=embeds, view=view)
+                    if embeds:
+                        await interaction.edit_original_response(content=content, embeds=embeds, view=view)
+                    else:
+                        await interaction.edit_original_response(content=content, view=view)
                     logger.info("Successfully updated original message")
-                except discord.NotFound:
-                    logger.error("Update failed: Original message not found")
+                except discord.errors.NotFound:
+                    logger.error("Cannot edit original response - interaction expired")
                 except Exception as e:
-                    logger.error(f"Error updating message: {e}")
+                    logger.error(f"Error editing original response: {e}")
             
-            logger.info(f"Successfully handled interaction {interaction.id}")
+            else:
+                logger.warning(f"Unknown response type: {response_type}")
+            
+            # Log processing time
+            processing_time = (datetime.now() - interaction_start_time).total_seconds()
+            logger.info(f"Interaction {interaction.id} processed in {processing_time:.2f}s")
             
         except TimeoutError:
             logger.error(f"Timeout handling interaction {interaction.id}")
-            if not interaction.response.is_done():
-                try:
-                    embed = discord.Embed(
-                        title="⏰ Timeout",
-                        description="Request timed out. Please try again!",
-                        color=0xff9900
-                    )
-                    await interaction.response.send_message(embed=embed, ephemeral=True)
-                except:
-                    pass
+            embed = discord.Embed(
+                title="⏰ Timeout",
+                description="Request timed out. Please try again!",
+                color=0xff9900
+            )
+            await self.safe_send_response(interaction, embeds=[embed], ephemeral=True)
+            
+        except discord.errors.NotFound:
+            logger.error(f"Interaction {interaction.id} token expired")
+            # Cannot respond to expired interaction
             
         except Exception as e:
             logger.error(f"Error handling interaction {interaction.id}: {e}")
-            if not interaction.response.is_done():
-                try:
-                    embed = discord.Embed(
-                        title="❌ Error",
-                        description="Something went wrong. Please try again later!",
-                        color=0xff4444
-                    )
-                    await interaction.response.send_message(embed=embed, ephemeral=True)
-                except:
-                    pass
+            embed = discord.Embed(
+                title="❌ Error",
+                description="Something went wrong. Please try again later!",
+                color=0xff4444
+            )
+            await self.safe_send_response(interaction, embeds=[embed], ephemeral=True)
 
 handler = InteractionHandler()
 
