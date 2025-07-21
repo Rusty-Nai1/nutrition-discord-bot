@@ -161,86 +161,154 @@ class InteractionHandler:
         # DEFER IMMEDIATELY - Critical for timeout prevention
         if not interaction.response.is_done():
             await interaction.response.defer()
+            logger.info(f"Deferred interaction {interaction.id}")
         
         try:
             # Serialize the raw Discord interaction
             interaction_data = self.serialize_interaction(interaction)
+            logger.info(f"Serialized interaction data: {json.dumps(interaction_data, indent=2)}")
             
             # Forward to Lambda
             lambda_response = await self.call_lambda(interaction_data)
+            logger.info(f"Lambda response received: {json.dumps(lambda_response, indent=2)}")
             
             # Process Lambda response
             response_type = lambda_response.get('type', 4)
+            logger.info(f"Processing response type: {response_type}")
             
             if response_type == 4:  # CHANNEL_MESSAGE_WITH_SOURCE
+                logger.info("Processing CHANNEL_MESSAGE_WITH_SOURCE response")
                 data = lambda_response.get('data', {})
                 content = data.get('content', '')
+                logger.info(f"Message content: {content}")
                 
                 embeds = []
                 if 'embeds' in data:
-                    for embed_data in data['embeds']:
-                        embed = discord.Embed(
-                            title=embed_data.get('title'),
-                            description=embed_data.get('description'),
-                            color=embed_data.get('color', 0x0099ff)
-                        )
-                        if 'fields' in embed_data:
-                            for field in embed_data['fields']:
-                                embed.add_field(
-                                    name=field.get('name', ''),
-                                    value=field.get('value', ''),
-                                    inline=field.get('inline', False)
-                                )
-                        embeds.append(embed)
+                    logger.info(f"Processing {len(data['embeds'])} embeds")
+                    for i, embed_data in enumerate(data['embeds']):
+                        logger.info(f"Processing embed {i}: {embed_data}")
+                        try:
+                            embed = discord.Embed(
+                                title=embed_data.get('title'),
+                                description=embed_data.get('description'),
+                                color=embed_data.get('color', 0x0099ff)
+                            )
+                            if 'fields' in embed_data:
+                                logger.info(f"Adding {len(embed_data['fields'])} fields to embed {i}")
+                                for field in embed_data['fields']:
+                                    embed.add_field(
+                                        name=field.get('name', ''),
+                                        value=field.get('value', ''),
+                                        inline=field.get('inline', False)
+                                    )
+                            embeds.append(embed)
+                            logger.info(f"Successfully created embed {i}")
+                        except Exception as e:
+                            logger.error(f"Error creating embed {i}: {e}")
+                            logger.error(f"Embed data: {embed_data}")
                 
                 view = None
                 if 'components' in data:
-                    view = self.create_view_from_components(data['components'])
+                    logger.info(f"Processing {len(data['components'])} component rows")
+                    try:
+                        view = self.create_view_from_components(data['components'])
+                        logger.info("Successfully created view from components")
+                    except Exception as e:
+                        logger.error(f"Error creating view: {e}")
+                        logger.error(f"Components data: {data['components']}")
                 
                 ephemeral = data.get('flags', 0) & 64 == 64
+                logger.info(f"Ephemeral: {ephemeral}")
                 
-                if embeds:
-                    await interaction.followup.send(content=content, embeds=embeds, view=view, ephemeral=ephemeral)
-                else:
-                    await interaction.followup.send(content=content, view=view, ephemeral=ephemeral)
+                try:
+                    if embeds:
+                        logger.info(f"Sending followup with {len(embeds)} embeds and view={view is not None}")
+                        await interaction.followup.send(content=content, embeds=embeds, view=view, ephemeral=ephemeral)
+                    else:
+                        logger.info(f"Sending followup with content only and view={view is not None}")
+                        await interaction.followup.send(content=content, view=view, ephemeral=ephemeral)
+                    logger.info("Successfully sent followup message")
+                except discord.HTTPException as e:
+                    logger.error(f"Discord HTTPException in followup.send: {e}")
+                    logger.error(f"Content length: {len(content)}, Embeds: {len(embeds)}, View: {view is not None}")
+                except discord.Forbidden as e:
+                    logger.error(f"Discord Forbidden in followup.send: {e}")
+                except discord.NotFound as e:
+                    logger.error(f"Discord NotFound in followup.send: {e}")
+                except Exception as e:
+                    logger.error(f"Unexpected error in followup.send: {e}")
+                    logger.error(f"Error type: {type(e)}")
             
             elif response_type == 9:  # MODAL
+                logger.info("Processing MODAL response")
                 modal_data = lambda_response.get('data', {})
-                modal = self.create_modal_from_data(modal_data)
-                # Can't defer modal response, must send immediately
-                if not interaction.response.is_done():
-                    await interaction.response.send_modal(modal)
+                logger.info(f"Modal data: {modal_data}")
+                try:
+                    modal = self.create_modal_from_data(modal_data)
+                    # Can't defer modal response, must send immediately
+                    if not interaction.response.is_done():
+                        await interaction.response.send_modal(modal)
+                        logger.info("Successfully sent modal")
+                    else:
+                        logger.error("Cannot send modal - interaction already responded")
+                except Exception as e:
+                    logger.error(f"Error creating/sending modal: {e}")
+                    logger.error(f"Modal data: {modal_data}")
             
             elif response_type == 5:  # DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE
+                logger.info("Processing DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE - already deferred")
                 # Already deferred above, no additional action needed
                 pass
             
             elif response_type == 6:  # DEFERRED_UPDATE_MESSAGE
+                logger.info("Processing DEFERRED_UPDATE_MESSAGE - already deferred")
                 # Already deferred above, no additional action needed
                 pass
             
             elif response_type == 7:  # UPDATE_MESSAGE
+                logger.info("Processing UPDATE_MESSAGE response")
                 data = lambda_response.get('data', {})
                 content = data.get('content', '')
+                logger.info(f"Update content: {content}")
                 
                 embeds = []
                 if 'embeds' in data:
-                    for embed_data in data['embeds']:
-                        embed = discord.Embed(
-                            title=embed_data.get('title'),
-                            description=embed_data.get('description'),
-                            color=embed_data.get('color', 0x0099ff)
-                        )
-                        embeds.append(embed)
+                    logger.info(f"Processing {len(data['embeds'])} embeds for update")
+                    for i, embed_data in enumerate(data['embeds']):
+                        try:
+                            embed = discord.Embed(
+                                title=embed_data.get('title'),
+                                description=embed_data.get('description'),
+                                color=embed_data.get('color', 0x0099ff)
+                            )
+                            embeds.append(embed)
+                            logger.info(f"Successfully created update embed {i}")
+                        except Exception as e:
+                            logger.error(f"Error creating update embed {i}: {e}")
                 
                 view = None
                 if 'components' in data:
-                    view = self.create_view_from_components(data['components'])
+                    logger.info("Processing components for update")
+                    try:
+                        view = self.create_view_from_components(data['components'])
+                        logger.info("Successfully created view for update")
+                    except Exception as e:
+                        logger.error(f"Error creating view for update: {e}")
                 
-                if embeds:
-                    await interaction.edit_original_response(content=content, embeds=embeds, view=view)
-                else:
-                    await interaction.edit_original_response(content=content, view=view)
+                try:
+                    if embeds:
+                        logger.info("Editing original response with embeds")
+                        await interaction.edit_original_response(content=content, embeds=embeds, view=view)
+                    else:
+                        logger.info("Editing original response without embeds")
+                        await interaction.edit_original_response(content=content, view=view)
+                    logger.info("Successfully updated original message")
+                except Exception as e:
+                    logger.error(f"Error editing original response: {e}")
+            
+            else:
+                logger.warning(f"Unknown response type: {response_type}")
+                logger.warning(f"Full response: {lambda_response}")
             
             logger.info(f"Successfully handled interaction for {interaction.user}")
             
