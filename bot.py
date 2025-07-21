@@ -188,20 +188,19 @@ class InteractionHandler:
                               embeds: list = None, view: discord.ui.View = None, 
                               ephemeral: bool = False) -> bool:
        try:
+           kwargs = {'content': content, 'ephemeral': ephemeral}
+           if embeds:
+               kwargs['embeds'] = embeds
+           if view is not None:
+               kwargs['view'] = view
+               
            if interaction.response.is_done():
-               if embeds:
-                   await interaction.followup.send(content=content, embeds=embeds, view=view, ephemeral=ephemeral)
-               else:
-                   await interaction.followup.send(content=content, view=view, ephemeral=ephemeral)
+               await interaction.followup.send(**kwargs)
                logger.info(f"Sent followup for interaction {interaction.id}")
-               return True
            else:
-               if embeds:
-                   await interaction.response.send_message(content=content, embeds=embeds, view=view, ephemeral=ephemeral)
-               else:
-                   await interaction.response.send_message(content=content, view=view, ephemeral=ephemeral)
+               await interaction.response.send_message(**kwargs)
                logger.info(f"Sent original response for interaction {interaction.id}")
-               return True
+           return True
        except discord.errors.NotFound:
            logger.error(f"Interaction {interaction.id} token expired - cannot send response")
            return False
@@ -337,10 +336,12 @@ class InteractionHandler:
                        logger.error(f"Error creating view for update: {e}")
                
                try:
+                   kwargs = {'content': content}
                    if embeds:
-                       await interaction.edit_original_response(content=content, embeds=embeds, view=view)
-                   else:
-                       await interaction.edit_original_response(content=content, view=view)
+                       kwargs['embeds'] = embeds
+                   if view is not None:
+                       kwargs['view'] = view
+                   await interaction.edit_original_response(**kwargs)
                    logger.info("Successfully updated original message")
                except discord.errors.NotFound:
                    logger.error("Cannot edit original response - interaction expired")
