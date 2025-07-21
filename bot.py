@@ -158,6 +158,10 @@ class InteractionHandler:
         return DynamicModal(modal_data, self)
     
     async def handle_interaction(self, interaction: discord.Interaction):
+        # DEFER IMMEDIATELY - Critical for timeout prevention
+        if not interaction.response.is_done():
+            await interaction.response.defer()
+        
         try:
             # Serialize the raw Discord interaction
             interaction_data = self.serialize_interaction(interaction)
@@ -195,29 +199,25 @@ class InteractionHandler:
                 
                 ephemeral = data.get('flags', 0) & 64 == 64
                 
-                if interaction.response.is_done():
-                    if embeds:
-                        await interaction.followup.send(content=content, embeds=embeds, view=view, ephemeral=ephemeral)
-                    else:
-                        await interaction.followup.send(content=content, view=view, ephemeral=ephemeral)
+                if embeds:
+                    await interaction.followup.send(content=content, embeds=embeds, view=view, ephemeral=ephemeral)
                 else:
-                    if embeds:
-                        await interaction.response.send_message(content=content, embeds=embeds, view=view, ephemeral=ephemeral)
-                    else:
-                        await interaction.response.send_message(content=content, view=view, ephemeral=ephemeral)
+                    await interaction.followup.send(content=content, view=view, ephemeral=ephemeral)
             
             elif response_type == 9:  # MODAL
                 modal_data = lambda_response.get('data', {})
                 modal = self.create_modal_from_data(modal_data)
-                await interaction.response.send_modal(modal)
+                # Can't defer modal response, must send immediately
+                if not interaction.response.is_done():
+                    await interaction.response.send_modal(modal)
             
             elif response_type == 5:  # DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE
-                if not interaction.response.is_done():
-                    await interaction.response.defer()
+                # Already deferred above, no additional action needed
+                pass
             
             elif response_type == 6:  # DEFERRED_UPDATE_MESSAGE
-                if not interaction.response.is_done():
-                    await interaction.response.defer()
+                # Already deferred above, no additional action needed
+                pass
             
             elif response_type == 7:  # UPDATE_MESSAGE
                 data = lambda_response.get('data', {})
@@ -237,37 +237,35 @@ class InteractionHandler:
                 if 'components' in data:
                     view = self.create_view_from_components(data['components'])
                 
-                if interaction.response.is_done():
-                    if embeds:
-                        await interaction.edit_original_response(content=content, embeds=embeds, view=view)
-                    else:
-                        await interaction.edit_original_response(content=content, view=view)
+                if embeds:
+                    await interaction.edit_original_response(content=content, embeds=embeds, view=view)
                 else:
-                    if embeds:
-                        await interaction.response.edit_message(content=content, embeds=embeds, view=view)
-                    else:
-                        await interaction.response.edit_message(content=content, view=view)
+                    await interaction.edit_original_response(content=content, view=view)
             
             logger.info(f"Successfully handled interaction for {interaction.user}")
             
         except TimeoutError:
-            if not interaction.response.is_done():
-                embed = discord.Embed(
-                    title="⏰ Timeout",
-                    description="Request timed out. Please try again!",
-                    color=0xff9900
-                )
-                await interaction.response.send_message(embed=embed, ephemeral=True)
+            embed = discord.Embed(
+                title="⏰ Timeout",
+                description="Request timed out. Please try again!",
+                color=0xff9900
+            )
+            try:
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            except:
+                logger.error("Failed to send timeout message")
             
         except Exception as e:
             logger.error(f"Error handling interaction: {e}")
-            if not interaction.response.is_done():
-                embed = discord.Embed(
-                    title="❌ Error",
-                    description="Something went wrong. Please try again later!",
-                    color=0xff4444
-                )
-                await interaction.response.send_message(embed=embed, ephemeral=True)
+            embed = discord.Embed(
+                title="❌ Error",
+                description="Something went wrong. Please try again later!",
+                color=0xff4444
+            )
+            try:
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            except:
+                logger.error("Failed to send error message")
 
 handler = InteractionHandler()
 
