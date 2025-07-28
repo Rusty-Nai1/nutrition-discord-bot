@@ -114,23 +114,7 @@ class InteractionHandler:
                     raise
                 await asyncio.sleep(1)
     
-    async def send_additional_messages(self, interaction: discord.Interaction, additional_messages: list):
-        """Send additional messages with 500ms delays"""
-        for i, message_data in enumerate(additional_messages):
-            if i > 0:  # Delay for all messages except first
-                await asyncio.sleep(0.5)
-            
-            try:
-                await interaction.followup.send(
-                    content=message_data.get('content', ''),
-                    ephemeral=message_data.get('ephemeral', False)
-                )
-                logger.info(f"Sent additional message {i+1}/{len(additional_messages)}")
-            except discord.errors.NotFound:
-                logger.error(f"Failed to send additional message {i+1}: interaction token expired")
-                break
-            except Exception as e:
-                logger.error(f"Failed to send additional message {i+1}: {e}")
+
     
     def create_view_from_components(self, components: list) -> discord.ui.View:
         view = discord.ui.View(timeout=300)
@@ -183,11 +167,11 @@ class InteractionHandler:
         
         return DynamicModal(modal_data, self)
     
-    async def safe_defer(self, interaction: discord.Interaction, ephemeral: bool = False) -> bool:
+    async def safe_defer(self, interaction: discord.Interaction, ephemeral: bool = False, thinking: bool = False) -> bool:
         try:
             if not interaction.response.is_done():
-                await interaction.response.defer(ephemeral=ephemeral)
-                logger.info(f"Successfully deferred interaction {interaction.id}")
+                await interaction.response.defer(ephemeral=ephemeral, thinking=thinking)
+                logger.info(f"Successfully deferred interaction {interaction.id} (thinking={thinking})")
                 return True
             else:
                 logger.info(f"Interaction {interaction.id} already responded")
@@ -238,8 +222,8 @@ class InteractionHandler:
                 return
             
             if interaction.type == discord.InteractionType.modal_submit:
-                logger.info(f"Modal submission detected - deferring immediately")
-                deferred = await self.safe_defer(interaction)
+                logger.info(f"Modal submission detected - deferring with thinking indicator")
+                deferred = await self.safe_defer(interaction, thinking=True)
                 if not deferred:
                     logger.error("Failed to defer modal submission")
                     return
@@ -281,7 +265,7 @@ class InteractionHandler:
                     return
             
             if interaction.type != discord.InteractionType.modal_submit:
-                deferred = await self.safe_defer(interaction)
+                deferred = await self.safe_defer(interaction, thinking=True)
             
             if response_type == 4:
                 logger.info("Processing CHANNEL_MESSAGE_WITH_SOURCE response")
@@ -320,12 +304,6 @@ class InteractionHandler:
                 success = await self.safe_send_response(interaction, content, embeds, view, ephemeral)
                 if not success:
                     logger.error("Failed to send message response")
-                
-                # Handle additional messages
-                additional_messages = data.get('additional_messages', [])
-                if additional_messages:
-                    logger.info(f"Processing {len(additional_messages)} additional messages")
-                    await self.send_additional_messages(interaction, additional_messages)
             
             elif response_type == 5:
                 logger.info("Processing DEFERRED_CHANNEL_MESSAGE_WITH_SOURCE - already deferred")
@@ -372,12 +350,6 @@ class InteractionHandler:
                     logger.error("Cannot edit original response - interaction expired")
                 except Exception as e:
                     logger.error(f"Error editing original response: {e}")
-                
-                # Handle additional messages for UPDATE_MESSAGE
-                additional_messages = lambda_response.get('data', {}).get('additional_messages', [])
-                if additional_messages:
-                    logger.info(f"Processing {len(additional_messages)} additional messages for update")
-                    await self.send_additional_messages(interaction, additional_messages)
             
             else:
                 logger.warning(f"Unknown response type: {response_type}")
