@@ -398,7 +398,7 @@ async def on_ready():
     await bot.change_presence(
         activity=discord.Activity(
             type=discord.ActivityType.watching,
-            name="for /hi and /hola"
+            name="for /hi, /hola, and /salut"
         )
     )
 
@@ -413,6 +413,10 @@ async def hi(interaction: discord.Interaction):
 
 @bot.tree.command(name="hola", description="Iniciar una conversación en español")
 async def hola(interaction: discord.Interaction):
+    await handler.handle_interaction(interaction)
+
+@bot.tree.command(name="salut", description="Commencer une conversation en français")
+async def salut(interaction: discord.Interaction):
     await handler.handle_interaction(interaction)
 
 @bot.event
