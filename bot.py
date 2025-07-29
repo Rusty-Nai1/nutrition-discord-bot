@@ -391,7 +391,13 @@ async def on_ready():
     
     try:
         synced = await bot.tree.sync()
-        logger.info(f'Synced {len(synced)} slash commands')
+        logger.info(f'Synced {len(synced)} slash commands: {[cmd.name for cmd in synced]}')
+        
+        # Force a second sync if we don't have all 3 commands
+        if len(synced) < 3:
+            await asyncio.sleep(2)
+            synced = await bot.tree.sync()
+            logger.info(f'Re-synced {len(synced)} slash commands: {[cmd.name for cmd in synced]}')
     except Exception as e:
         logger.error(f'Failed to sync commands: {e}')
     
