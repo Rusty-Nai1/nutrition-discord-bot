@@ -121,8 +121,12 @@ class NutritionView(discord.ui.View):
             
             if response and response.get('type') == 9:  # MODAL response
                 modal_data = response.get('data', {})
+                title = modal_data.get('title', 'Form')[:45]
+                logger.info(f"Creating modal - Title: '{title}' (length: {len(title)})")
+                logger.info(f"Modal components count: {len(modal_data.get('components', []))}")
+                
                 modal = NutritionModal(
-                    title=modal_data.get('title', 'Form')[:45],
+                    title=title,
                     category=category,
                     language=self.language,
                     modal_data=modal_data
@@ -149,36 +153,61 @@ class NutritionModal(discord.ui.Modal):
         self.category = category
         self.language = language
         
+        logger.info(f"Building modal for {language} - {category}")
+        
         # Use modal_data from Lambda to build form fields
         if modal_data and 'components' in modal_data:
+            component_count = 0
             for component_row in modal_data['components']:
-                if component_row.get('type') == 1:  # Action Row
+                if component_row.get('type') == 1 and component_count < 5:  # Action Row, max 5 components
                     for component in component_row.get('components', []):
                         if component.get('type') == 4:  # Text Input
-                            text_input = discord.ui.TextInput(
-                                label=component.get('label', 'Input')[:45],
-                                placeholder=component.get('placeholder', ''),
-                                style=discord.TextStyle.paragraph if component.get('style') == 2 else discord.TextStyle.short,
-                                max_length=component.get('max_length', 1000),
-                                required=component.get('required', False)
-                            )
-                            text_input.custom_id = component.get('custom_id', 'field')
-                            self.add_item(text_input)
+                            try:
+                                label = component.get('label', 'Input')[:45]  # Discord 45 char limit
+                                placeholder = component.get('placeholder', '')[:100]  # Discord 100 char limit
+                                custom_id = component.get('custom_id', f'field_{component_count}')[:100]
+                                
+                                logger.info(f"Adding field - Label: '{label}' ({len(label)} chars), ID: '{custom_id}'")
+                                
+                                text_input = discord.ui.TextInput(
+                                    label=label,
+                                    placeholder=placeholder,
+                                    style=discord.TextStyle.paragraph if component.get('style') == 2 else discord.TextStyle.short,
+                                    max_length=min(component.get('max_length', 1000), 4000),  # Discord max
+                                    required=component.get('required', False)
+                                )
+                                text_input.custom_id = custom_id
+                                self.add_item(text_input)
+                                component_count += 1
+                                
+                                if component_count >= 5:  # Discord modal limit
+                                    break
+                                    
+                            except Exception as e:
+                                logger.error(f"Error adding modal field: {e}")
+                                continue
+        
+        logger.info(f"Modal created with {len(self.children)} fields")
     
     async def on_submit(self, interaction: discord.Interaction):
         try:
+            logger.info(f"Modal submitted for {self.language} - {self.category}")
             await interaction.response.defer(thinking=True)
             
             # Build components structure matching Lambda's expected format
             components = []
             for item in self.children:
                 if isinstance(item, discord.ui.TextInput):
+                    field_id = getattr(item, 'custom_id', 'field')
+                    field_value = item.value or ''
+                    logger.info(f"Field {field_id}: '{field_value}' ({len(field_value)} chars)")
+                    
                     components.append({
                         'type': 1,
                         'components': [{
                             'type': 4,
-                            'custom_id': getattr(item, 'custom_id', 'field'),
-                            'value': item.value
+                            'custom_id': field_id,
+                            'value': field_value
                         }]
                     })
             
@@ -197,22 +226,44 @@ class NutritionModal(discord.ui.Modal):
                 "channel_id": str(interaction.channel.id)
             }
             
+            logger.info(f"Sending payload to Lambda: {custom_id}")
             response = await send_to_lambda(payload)
             
             # DEBUG: Log the actual response
             logger.info(f"Lambda response: {json.dumps(response, indent=2) if response else 'None'}")
             
             if response:
-                # Lambda returns content nested under data.content
-                content = response.get('data', {}).get('content', 'Thank you for your submission!')
-                logger.info(f"Extracted content: {content}")
+                # Try multiple response formats
+                content = None
+                if 'data' in response and 'content' in response['data']:
+                    content = response['data']['content']
+                elif 'content' in response:
+                    content = response['content']
+                elif 'body' in response:
+                    try:
+                        body_data = json.loads(response['body']) if isinstance(response['body'], str) else response['body']
+                        if 'data' in body_data and 'content' in body_data['data']:
+                            content = body_data['data']['content']
+                    except:
+                        pass
+                
+                if not content:
+                    content = 'Thank you for your submission! Processing your request...'
+                
+                logger.info(f"Extracted content: {content[:100]}...")
                 await interaction.followup.send(content)
             else:
+                logger.warning("No response from Lambda")
                 await interaction.followup.send("Thank you for your submission! Processing your request...")
                 
         except Exception as e:
-            logger.error(f"Error submitting form: {e}")
-            await interaction.followup.send("Sorry, there was an error processing your submission.")
+            logger.error(f"Error submitting form for {self.language}-{self.category}: {e}")
+            import traceback
+            logger.error(f"Traceback: {traceback.format_exc()}")
+            try:
+                await interaction.followup.send("Sorry, there was an error processing your submission.")
+            except:
+                pass
 
 @bot.event
 async def on_ready():
