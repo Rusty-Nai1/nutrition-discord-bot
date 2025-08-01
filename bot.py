@@ -122,23 +122,28 @@ class NutritionView(discord.ui.View):
             if response and response.get('type') == 9:  # MODAL response
                 modal_data = response.get('data', {})
                 title = modal_data.get('title', 'Form')[:45]
-                logger.info(f"Creating modal - Title: '{title}' (length: {len(title)})")
+                logger.info(f"Creating modal for {self.language} - Title: '{title}' (length: {len(title)})")
                 logger.info(f"Modal components count: {len(modal_data.get('components', []))}")
                 
-                modal = NutritionModal(
-                    title=title,
-                    category=category,
-                    language=self.language,
-                    modal_data=modal_data
-                )
-                # Send modal as INITIAL response (not followup)
-                await interaction.response.send_modal(modal)
+                try:
+                    modal = NutritionModal(
+                        title=title,
+                        category=category,
+                        language=self.language,
+                        modal_data=modal_data
+                    )
+                    # Send modal as INITIAL response (not followup)
+                    await interaction.response.send_modal(modal)
+                    logger.info(f"Successfully sent {self.language} modal")
+                except Exception as modal_error:
+                    logger.error(f"Modal creation failed for {self.language}: {modal_error}")
+                    await interaction.response.send_message(f"Error creating form for {self.language}. Please try again.", ephemeral=True)
             else:
                 content = response.get('content', 'Processing...') if response else 'Error occurred'
                 await interaction.response.send_message(content)
                 
         except Exception as e:
-            logger.error(f"Error handling category {category}: {e}")
+            logger.error(f"Error handling category {category} for {self.language}: {e}")
             try:
                 if not interaction.response.is_done():
                     await interaction.response.send_message("Error processing request.", ephemeral=True)
