@@ -64,26 +64,41 @@ class NutritionView(discord.ui.View):
         }
         
         self.labels = button_labels.get(language, button_labels['EN'])
+        
+        # Update button labels after initialization
+        self._update_button_labels()
     
-    @discord.ui.button(label='🥗 Recipes', style=discord.ButtonStyle.primary, custom_id='category_recipes')
+    def _update_button_labels(self):
+        # Update labels after buttons are created
+        for item in self.children:
+            if isinstance(item, discord.ui.Button):
+                if item.custom_id == 'category_recipes':
+                    item.label = self.labels['recipes']
+                elif item.custom_id == 'category_nutrition':
+                    item.label = self.labels['nutrition']
+                elif item.custom_id == 'category_mealprep':
+                    item.label = self.labels['mealprep']
+                elif item.custom_id == 'category_workout':
+                    item.label = self.labels['workout']
+    
+    @discord.ui.button(label='Placeholder', style=discord.ButtonStyle.primary, custom_id='category_recipes')
     async def recipes_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        button.label = self.labels['recipes']
         await self.handle_category(interaction, 'recipes')
     
-    @discord.ui.button(label='📊 Nutrition', style=discord.ButtonStyle.primary, custom_id='category_nutrition')
+    @discord.ui.button(label='Placeholder', style=discord.ButtonStyle.primary, custom_id='category_nutrition')
     async def nutrition_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        button.label = self.labels['nutrition']
         await self.handle_category(interaction, 'nutrition')
     
-    @discord.ui.button(label='🍽️ Meal Prep', style=discord.ButtonStyle.primary, custom_id='category_mealprep')
+    @discord.ui.button(label='Placeholder', style=discord.ButtonStyle.primary, custom_id='category_mealprep')
     async def mealprep_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        button.label = self.labels['mealprep']
         await self.handle_category(interaction, 'mealprep')
     
-    @discord.ui.button(label='💪 Workout', style=discord.ButtonStyle.secondary, custom_id='category_workout')
+    @discord.ui.button(label='Placeholder', style=discord.ButtonStyle.secondary, custom_id='category_workout')
     async def workout_button(self, interaction: discord.Interaction, button: discord.ui.Button):
-        button.label = self.labels['workout']
         await self.handle_category(interaction, 'workout')
+    
+    async def on_timeout(self):
+        pass
     
     async def handle_category(self, interaction: discord.Interaction, category: str):
         try:
@@ -107,20 +122,22 @@ class NutritionView(discord.ui.View):
             if response and response.get('type') == 9:  # MODAL response
                 modal_data = response.get('data', {})
                 modal = NutritionModal(
-                    title=modal_data.get('title', 'Nutrition Form')[:45],  # Discord limit
+                    title=modal_data.get('title', 'Form')[:45],
                     category=category,
                     language=self.language,
                     modal_data=modal_data
                 )
                 await interaction.followup.send_modal(modal)
             else:
-                # Standard message response
-                content = response.get('content', 'Processing your request...')
+                content = response.get('content', 'Processing...') if response else 'Error occurred'
                 await interaction.followup.send(content)
                 
         except Exception as e:
             logger.error(f"Error handling category {category}: {e}")
-            await interaction.followup.send("Sorry, there was an error processing your request.")
+            try:
+                await interaction.followup.send("Error processing request.")
+            except:
+                pass
 
 class NutritionModal(discord.ui.Modal):
     def __init__(self, title: str, category: str, language: str, modal_data: dict = None):
