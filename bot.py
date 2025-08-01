@@ -50,37 +50,41 @@ async def send_to_lambda(payload):
         return None
 
 class NutritionView(discord.ui.View):
-    def __init__(self, language='en'):
+    def __init__(self, language='EN'):
         super().__init__(timeout=300)
         self.language = language
         
-    @discord.ui.button(label='🥗 Meal Planning', style=discord.ButtonStyle.primary)
-    async def meal_planning(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.handle_category(interaction, 'meal_planning')
+    @discord.ui.button(label='🥗 Recipes', style=discord.ButtonStyle.primary, custom_id='category_recipes')
+    async def recipes(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_category(interaction, 'recipes')
     
-    @discord.ui.button(label='💪 Fitness Goals', style=discord.ButtonStyle.primary)
-    async def fitness_goals(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.handle_category(interaction, 'fitness_goals')
+    @discord.ui.button(label='📊 Nutrition', style=discord.ButtonStyle.primary, custom_id='category_nutrition')
+    async def nutrition(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_category(interaction, 'nutrition')
     
-    @discord.ui.button(label='🔍 Food Analysis', style=discord.ButtonStyle.primary)
-    async def food_analysis(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.handle_category(interaction, 'food_analysis')
+    @discord.ui.button(label='🍽️ Meal Prep', style=discord.ButtonStyle.primary, custom_id='category_mealprep')
+    async def mealprep(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_category(interaction, 'mealprep')
     
-    @discord.ui.button(label='❓ General Questions', style=discord.ButtonStyle.secondary)
-    async def general_questions(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await self.handle_category(interaction, 'general_questions')
+    @discord.ui.button(label='💪 Workout', style=discord.ButtonStyle.secondary, custom_id='category_workout')
+    async def workout(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self.handle_category(interaction, 'workout')
     
     async def handle_category(self, interaction: discord.Interaction, category: str):
         try:
             await interaction.response.defer(thinking=True)
             
-            # Send to Lambda for processing
+            # Create Discord interaction format your Lambda expects
             payload = {
-                'type': 'category_selection',
-                'category': category,
-                'language': self.language,
-                'user_id': str(interaction.user.id),
-                'channel_id': str(interaction.channel.id)
+                "type": 3,
+                "data": {
+                    "custom_id": f"category_{category}_{self.language}",
+                    "component_type": 2
+                },
+                "user": {
+                    "id": str(interaction.user.id)
+                },
+                "channel_id": str(interaction.channel.id)
             }
             
             response = await send_to_lambda(payload)
@@ -90,7 +94,8 @@ class NutritionView(discord.ui.View):
                 modal = NutritionModal(
                     title=modal_data.get('title', 'Nutrition Form')[:45],  # Discord limit
                     category=category,
-                    language=self.language
+                    language=self.language,
+                    modal_data=modal_data
                 )
                 await interaction.followup.send_modal(modal)
             else:
@@ -103,62 +108,74 @@ class NutritionView(discord.ui.View):
             await interaction.followup.send("Sorry, there was an error processing your request.")
 
 class NutritionModal(discord.ui.Modal):
-    def __init__(self, title: str, category: str, language: str):
+    def __init__(self, title: str, category: str, language: str, modal_data: dict = None):
         super().__init__(title=title)
         self.category = category
         self.language = language
         
-        # Add text inputs based on category with character limits
-        if category == 'meal_planning':
-            self.add_item(discord.ui.TextInput(
-                label='Dietary Preferences'[:45],  # Discord limit
-                placeholder='e.g., vegetarian, gluten-free, low-carb...',
-                max_length=500,
-                required=False
-            ))
-            self.add_item(discord.ui.TextInput(
-                label='Goals & Restrictions'[:45],  # Discord limit
-                placeholder='e.g., weight loss, muscle gain, allergies...',
-                style=discord.TextStyle.paragraph,
-                max_length=1000,
-                required=False
-            ))
-        elif category == 'fitness_goals':
-            self.add_item(discord.ui.TextInput(
-                label='Current Fitness Level'[:45],  # Discord limit
-                placeholder='e.g., beginner, intermediate, advanced...',
-                max_length=300,
-                required=False
-            ))
-            self.add_item(discord.ui.TextInput(
-                label='Goals & Timeline'[:45],  # Discord limit
-                placeholder='e.g., lose 10 lbs in 3 months, gain muscle...',
-                style=discord.TextStyle.paragraph,
-                max_length=1000,
-                required=False
-            ))
-        elif category == 'food_analysis':
-            self.add_item(discord.ui.TextInput(
-                label='Food/Meal to Analyze'[:45],  # Discord limit
-                placeholder='e.g., chicken caesar salad, protein shake...',
-                max_length=500,
-                required=True
-            ))
-            self.add_item(discord.ui.TextInput(
-                label='Specific Questions'[:45],  # Discord limit
-                placeholder='e.g., calories, nutrients, healthiness...',
-                style=discord.TextStyle.paragraph,
-                max_length=1000,
-                required=False
-            ))
-        else:  # general_questions
-            self.add_item(discord.ui.TextInput(
-                label='Your Question'[:45],  # Discord limit
-                placeholder='Ask anything about nutrition, diet, or health...',
-                style=discord.TextStyle.paragraph,
-                max_length=2000,
-                required=True
-            ))
+        # Use modal_data from Lambda if provided, otherwise fallback
+        if modal_data and 'components' in modal_data:
+            for component in modal_data['components']:
+                if component.get('type') == 4:  # Text Input
+                    self.add_item(discord.ui.TextInput(
+                        label=component.get('label', 'Input')[:45],
+                        placeholder=component.get('placeholder', ''),
+                        style=discord.TextStyle.paragraph if component.get('style') == 2 else discord.TextStyle.short,
+                        max_length=component.get('max_length', 1000),
+                        required=component.get('required', False)
+                    ))
+        else:
+            # Fallback to original structure
+            if category == 'mealprep':
+                self.add_item(discord.ui.TextInput(
+                    label='Dietary Preferences'[:45],
+                    placeholder='e.g., vegetarian, gluten-free, low-carb...',
+                    max_length=500,
+                    required=False
+                ))
+                self.add_item(discord.ui.TextInput(
+                    label='Goals & Restrictions'[:45],
+                    placeholder='e.g., weight loss, muscle gain, allergies...',
+                    style=discord.TextStyle.paragraph,
+                    max_length=1000,
+                    required=False
+                ))
+            elif category == 'workout':
+                self.add_item(discord.ui.TextInput(
+                    label='Current Fitness Level'[:45],
+                    placeholder='e.g., beginner, intermediate, advanced...',
+                    max_length=300,
+                    required=False
+                ))
+                self.add_item(discord.ui.TextInput(
+                    label='Goals & Timeline'[:45],
+                    placeholder='e.g., lose 10 lbs in 3 months, gain muscle...',
+                    style=discord.TextStyle.paragraph,
+                    max_length=1000,
+                    required=False
+                ))
+            elif category == 'nutrition':
+                self.add_item(discord.ui.TextInput(
+                    label='Food/Meal to Analyze'[:45],
+                    placeholder='e.g., chicken caesar salad, protein shake...',
+                    max_length=500,
+                    required=True
+                ))
+                self.add_item(discord.ui.TextInput(
+                    label='Specific Questions'[:45],
+                    placeholder='e.g., calories, nutrients, healthiness...',
+                    style=discord.TextStyle.paragraph,
+                    max_length=1000,
+                    required=False
+                ))
+            else:  # recipes
+                self.add_item(discord.ui.TextInput(
+                    label='Recipe Request'[:45],
+                    placeholder='e.g., high protein breakfast, vegan dinner...',
+                    style=discord.TextStyle.paragraph,
+                    max_length=2000,
+                    required=True
+                ))
     
     async def on_submit(self, interaction: discord.Interaction):
         try:
@@ -226,7 +243,7 @@ async def hi_command(interaction: discord.Interaction):
             description="Choose what you'd like help with:",
             color=discord.Color.green()
         )
-        view = NutritionView('en')
+        view = NutritionView('EN')
         await interaction.response.send_message(embed=embed, view=view)
     except Exception as e:
         logger.error(f"Error in hi command: {e}")
@@ -240,7 +257,7 @@ async def hola_command(interaction: discord.Interaction):
             description="Elige con qué te gustaría ayuda:",
             color=discord.Color.green()
         )
-        view = NutritionView('es')
+        view = NutritionView('ES')
         await interaction.response.send_message(embed=embed, view=view)
     except Exception as e:
         logger.error(f"Error in hola command: {e}")
@@ -254,7 +271,7 @@ async def salut_command(interaction: discord.Interaction):
             description="Choisissez ce avec quoi vous aimeriez de l'aide:",
             color=discord.Color.green()
         )
-        view = NutritionView('fr')
+        view = NutritionView('FR')
         await interaction.response.send_message(embed=embed, view=view)
     except Exception as e:
         logger.error(f"Error in salut command: {e}")
@@ -268,7 +285,7 @@ async def jambo_command(interaction: discord.Interaction):
             description="Chagua unachotaka msaada nao:",
             color=discord.Color.green()
         )
-        view = NutritionView('sw')
+        view = NutritionView('SW')
         await interaction.response.send_message(embed=embed, view=view)
     except Exception as e:
         logger.error(f"Error in jambo command: {e}")
@@ -282,7 +299,7 @@ async def muraho_command(interaction: discord.Interaction):
             description="Hitamo icyo ushaka ubufasha:",
             color=discord.Color.green()
         )
-        view = NutritionView('rw')
+        view = NutritionView('RW')
         await interaction.response.send_message(embed=embed, view=view)
     except Exception as e:
         logger.error(f"Error in muraho command: {e}")
