@@ -168,8 +168,13 @@ class NutritionModal(discord.ui.Modal):
                     for component in component_row.get('components', []):
                         if component.get('type') == 4:  # Text Input
                             try:
-                                label = component.get('label', 'Input')[:45]  # Discord 45 char limit
-                                placeholder = component.get('placeholder', '')[:100]  # Discord 100 char limit
+                                # Clean and validate all text fields
+                                raw_label = component.get('label', 'Input')
+                                raw_placeholder = component.get('placeholder', '')
+                                
+                                # Remove problematic characters and enforce limits
+                                label = self.clean_text(raw_label)[:45]
+                                placeholder = self.clean_text(raw_placeholder)[:100]
                                 custom_id = component.get('custom_id', f'field_{component_count}')[:100]
                                 
                                 logger.info(f"Adding field - Label: '{label}' ({len(label)} chars), ID: '{custom_id}'")
@@ -193,6 +198,19 @@ class NutritionModal(discord.ui.Modal):
                                 continue
         
         logger.info(f"Modal created with {len(self.children)} fields")
+    
+    def clean_text(self, text):
+        """Clean text for Discord compatibility"""
+        if not text:
+            return ""
+        # Ensure proper encoding and remove any problematic characters
+        try:
+            # Handle common French characters properly
+            text = text.encode('utf-8').decode('utf-8')
+            return text.strip()
+        except:
+            # Fallback: remove non-ASCII characters if encoding fails
+            return ''.join(char for char in text if ord(char) < 128).strip()
     
     async def on_submit(self, interaction: discord.Interaction):
         try:
