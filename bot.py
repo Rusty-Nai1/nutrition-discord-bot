@@ -179,5 +179,27 @@ class NutritionModal(discord.ui.Modal):
             logger.error(f"Error submitting form: {e}")
             await interaction.followup.send("Sorry, there was an error processing your submission.")
 
-async def send_to_lambda(payload):
-    """Send request to Lambda endpoint
+    async def send_to_lambda(self, payload):
+        """Send request to Lambda endpoint"""
+        headers = {"Content-Type": "application/json"}
+        
+        try:
+            response = requests.post(
+                LAMBDA_ENDPOINT,
+                json=payload,
+                headers=headers,
+                timeout=self.api_timeout
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                if 'body' in data:
+                    return json.loads(data['body'])
+                return data
+            else:
+                logger.error(f"Lambda returned status {response.status_code}: {response.text}")
+                return None
+                
+        except Exception as e:
+            logger.error(f"Lambda request failed: {e}")
+            return None
