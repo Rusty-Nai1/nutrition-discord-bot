@@ -23,6 +23,32 @@ if not DISCORD_TOKEN or not LAMBDA_ENDPOINT:
     logger.error("Missing required environment variables: DISCORD_TOKEN or LAMBDA_ENDPOINT")
     exit(1)
 
+# Global Lambda client
+async def send_to_lambda(payload):
+    """Send request to Lambda endpoint"""
+    headers = {"Content-Type": "application/json"}
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                LAMBDA_ENDPOINT,
+                json=payload,
+                headers=headers,
+                timeout=aiohttp.ClientTimeout(total=30)
+            ) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    if 'body' in data:
+                        return json.loads(data['body'])
+                    return data
+                else:
+                    logger.error(f"Lambda returned status {response.status}: {await response.text()}")
+                    return None
+                    
+    except Exception as e:
+        logger.error(f"Lambda request failed: {e}")
+        return None
+
 class NutritionView(discord.ui.View):
     def __init__(self, language='en'):
         super().__init__(timeout=300)
@@ -62,7 +88,7 @@ class NutritionView(discord.ui.View):
             if response and response.get('type') == 9:  # MODAL response
                 modal_data = response.get('data', {})
                 modal = NutritionModal(
-                    title=modal_data.get('title', 'Nutrition Form'),
+                    title=modal_data.get('title', 'Nutrition Form')[:45],  # Discord limit
                     category=category,
                     language=self.language
                 )
@@ -82,16 +108,16 @@ class NutritionModal(discord.ui.Modal):
         self.category = category
         self.language = language
         
-        # Add text inputs based on category
+        # Add text inputs based on category with character limits
         if category == 'meal_planning':
             self.add_item(discord.ui.TextInput(
-                label='Dietary Preferences',
+                label='Dietary Preferences'[:45],  # Discord limit
                 placeholder='e.g., vegetarian, gluten-free, low-carb...',
                 max_length=500,
                 required=False
             ))
             self.add_item(discord.ui.TextInput(
-                label='Goals & Restrictions',
+                label='Goals & Restrictions'[:45],  # Discord limit
                 placeholder='e.g., weight loss, muscle gain, allergies...',
                 style=discord.TextStyle.paragraph,
                 max_length=1000,
@@ -99,13 +125,13 @@ class NutritionModal(discord.ui.Modal):
             ))
         elif category == 'fitness_goals':
             self.add_item(discord.ui.TextInput(
-                label='Current Fitness Level',
+                label='Current Fitness Level'[:45],  # Discord limit
                 placeholder='e.g., beginner, intermediate, advanced...',
                 max_length=300,
                 required=False
             ))
             self.add_item(discord.ui.TextInput(
-                label='Goals & Timeline',
+                label='Goals & Timeline'[:45],  # Discord limit
                 placeholder='e.g., lose 10 lbs in 3 months, gain muscle...',
                 style=discord.TextStyle.paragraph,
                 max_length=1000,
@@ -113,13 +139,13 @@ class NutritionModal(discord.ui.Modal):
             ))
         elif category == 'food_analysis':
             self.add_item(discord.ui.TextInput(
-                label='Food/Meal to Analyze',
+                label='Food/Meal to Analyze'[:45],  # Discord limit
                 placeholder='e.g., chicken caesar salad, protein shake...',
                 max_length=500,
                 required=True
             ))
             self.add_item(discord.ui.TextInput(
-                label='Specific Questions',
+                label='Specific Questions'[:45],  # Discord limit
                 placeholder='e.g., calories, nutrients, healthiness...',
                 style=discord.TextStyle.paragraph,
                 max_length=1000,
@@ -127,7 +153,7 @@ class NutritionModal(discord.ui.Modal):
             ))
         else:  # general_questions
             self.add_item(discord.ui.TextInput(
-                label='Your Question',
+                label='Your Question'[:45],  # Discord limit
                 placeholder='Ask anything about nutrition, diet, or health...',
                 style=discord.TextStyle.paragraph,
                 max_length=2000,
@@ -179,27 +205,88 @@ class NutritionModal(discord.ui.Modal):
             logger.error(f"Error submitting form: {e}")
             await interaction.followup.send("Sorry, there was an error processing your submission.")
 
-    async def send_to_lambda(self, payload):
-        """Send request to Lambda endpoint"""
-        headers = {"Content-Type": "application/json"}
+@bot.event
+async def on_ready():
+    try:
+        logger.info(f'{bot.user} has connected to Discord!')
+        logger.info(f'Bot is in {len(bot.guilds)} guilds')
         
-        try:
-            response = requests.post(
-                LAMBDA_ENDPOINT,
-                json=payload,
-                headers=headers,
-                timeout=self.api_timeout
-            )
-            
-            if response.status_code == 200:
-                data = response.json()
-                if 'body' in data:
-                    return json.loads(data['body'])
-                return data
-            else:
-                logger.error(f"Lambda returned status {response.status_code}: {response.text}")
-                return None
-                
-        except Exception as e:
-            logger.error(f"Lambda request failed: {e}")
-            return None
+        # Sync commands
+        synced = await bot.tree.sync()
+        logger.info(f'Synced {len(synced)} slash commands')
+        
+    except Exception as e:
+        logger.error(f'Error in on_ready: {e}')
+
+@bot.tree.command(name="hi", description="Start nutrition analysis in English")
+async def hi_command(interaction: discord.Interaction):
+    try:
+        embed = discord.Embed(
+            title="🍎 Nutrition Assistant",
+            description="Choose what you'd like help with:",
+            color=discord.Color.green()
+        )
+        view = NutritionView('en')
+        await interaction.response.send_message(embed=embed, view=view)
+    except Exception as e:
+        logger.error(f"Error in hi command: {e}")
+        await interaction.response.send_message("❌ Error occurred", ephemeral=True)
+
+@bot.tree.command(name="hola", description="Iniciar análisis nutricional en español")
+async def hola_command(interaction: discord.Interaction):
+    try:
+        embed = discord.Embed(
+            title="🍎 Asistente de Nutrición",
+            description="Elige con qué te gustaría ayuda:",
+            color=discord.Color.green()
+        )
+        view = NutritionView('es')
+        await interaction.response.send_message(embed=embed, view=view)
+    except Exception as e:
+        logger.error(f"Error in hola command: {e}")
+        await interaction.response.send_message("❌ Error occurred", ephemeral=True)
+
+@bot.tree.command(name="salut", description="Commencer l'analyse nutritionnelle en français")
+async def salut_command(interaction: discord.Interaction):
+    try:
+        embed = discord.Embed(
+            title="🍎 Assistant Nutritionnel",
+            description="Choisissez ce avec quoi vous aimeriez de l'aide:",
+            color=discord.Color.green()
+        )
+        view = NutritionView('fr')
+        await interaction.response.send_message(embed=embed, view=view)
+    except Exception as e:
+        logger.error(f"Error in salut command: {e}")
+        await interaction.response.send_message("❌ Error occurred", ephemeral=True)
+
+@bot.tree.command(name="jambo", description="Anza uchambuzi wa lishe kwa Kiswahili")
+async def jambo_command(interaction: discord.Interaction):
+    try:
+        embed = discord.Embed(
+            title="🍎 Msaidizi wa Lishe",
+            description="Chagua unachotaka msaada nao:",
+            color=discord.Color.green()
+        )
+        view = NutritionView('sw')
+        await interaction.response.send_message(embed=embed, view=view)
+    except Exception as e:
+        logger.error(f"Error in jambo command: {e}")
+        await interaction.response.send_message("❌ Error occurred", ephemeral=True)
+
+@bot.tree.command(name="muraho", description="Tangira isesengura ry'intungamubiri mu Kinyarwanda")
+async def muraho_command(interaction: discord.Interaction):
+    try:
+        embed = discord.Embed(
+            title="🍎 Umufasha w'Intungamubiri",
+            description="Hitamo icyo ushaka ubufasha:",
+            color=discord.Color.green()
+        )
+        view = NutritionView('rw')
+        await interaction.response.send_message(embed=embed, view=view)
+    except Exception as e:
+        logger.error(f"Error in muraho command: {e}")
+        await interaction.response.send_message("❌ Error occurred", ephemeral=True)
+
+if __name__ == '__main__':
+    bot.run(DISCORD_TOKEN)
