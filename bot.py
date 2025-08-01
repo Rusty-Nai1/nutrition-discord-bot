@@ -102,7 +102,7 @@ class NutritionView(discord.ui.View):
     
     async def handle_category(self, interaction: discord.Interaction, category: str):
         try:
-            await interaction.response.defer(thinking=True)
+            # DON'T defer - modals must be initial response
             
             # Create Discord interaction format your Lambda expects
             payload = {
@@ -127,15 +127,19 @@ class NutritionView(discord.ui.View):
                     language=self.language,
                     modal_data=modal_data
                 )
-                await interaction.followup.send_modal(modal)
+                # Send modal as INITIAL response (not followup)
+                await interaction.response.send_modal(modal)
             else:
                 content = response.get('content', 'Processing...') if response else 'Error occurred'
-                await interaction.followup.send(content)
+                await interaction.response.send_message(content)
                 
         except Exception as e:
             logger.error(f"Error handling category {category}: {e}")
             try:
-                await interaction.followup.send("Error processing request.")
+                if not interaction.response.is_done():
+                    await interaction.response.send_message("Error processing request.", ephemeral=True)
+                else:
+                    await interaction.followup.send("Error processing request.", ephemeral=True)
             except:
                 pass
 
