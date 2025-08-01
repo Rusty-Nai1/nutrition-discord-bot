@@ -224,6 +224,9 @@ async def on_ready():
 @bot.tree.command(name="hi", description="Start nutrition analysis in English")
 async def hi_command(interaction: discord.Interaction):
     try:
+        if interaction.response.is_done():
+            return
+        
         embed = discord.Embed(
             title="🍎 Nutrition Assistant",
             description="Choose what you'd like help with:",
@@ -231,13 +234,22 @@ async def hi_command(interaction: discord.Interaction):
         )
         view = NutritionView('EN')
         await interaction.response.send_message(embed=embed, view=view)
+    except discord.errors.NotFound:
+        pass  # Interaction expired
     except Exception as e:
         logger.error(f"Error in hi command: {e}")
-        await interaction.response.send_message("❌ Error occurred", ephemeral=True)
+        if not interaction.response.is_done():
+            try:
+                await interaction.response.send_message("❌ Error occurred", ephemeral=True)
+            except discord.errors.NotFound:
+                pass
 
 @bot.tree.command(name="hola", description="Iniciar análisis nutricional en español")
 async def hola_command(interaction: discord.Interaction):
     try:
+        if interaction.response.is_done():
+            return
+        
         embed = discord.Embed(
             title="🍎 Asistente de Nutrición",
             description="Elige con qué te gustaría ayuda:",
@@ -245,13 +257,22 @@ async def hola_command(interaction: discord.Interaction):
         )
         view = NutritionView('ES')
         await interaction.response.send_message(embed=embed, view=view)
+    except discord.errors.NotFound:
+        pass  # Interaction expired
     except Exception as e:
         logger.error(f"Error in hola command: {e}")
-        await interaction.response.send_message("❌ Error occurred", ephemeral=True)
+        if not interaction.response.is_done():
+            try:
+                await interaction.response.send_message("❌ Error occurred", ephemeral=True)
+            except discord.errors.NotFound:
+                pass
 
 @bot.tree.command(name="salut", description="Commencer l'analyse nutritionnelle en français")
 async def salut_command(interaction: discord.Interaction):
     try:
+        if interaction.response.is_done():
+            return
+        
         embed = discord.Embed(
             title="🍎 Assistant Nutritionnel",
             description="Choisissez ce avec quoi vous aimeriez de l'aide:",
@@ -259,13 +280,22 @@ async def salut_command(interaction: discord.Interaction):
         )
         view = NutritionView('FR')
         await interaction.response.send_message(embed=embed, view=view)
+    except discord.errors.NotFound:
+        pass  # Interaction expired
     except Exception as e:
         logger.error(f"Error in salut command: {e}")
-        await interaction.response.send_message("❌ Error occurred", ephemeral=True)
+        if not interaction.response.is_done():
+            try:
+                await interaction.response.send_message("❌ Error occurred", ephemeral=True)
+            except discord.errors.NotFound:
+                pass
 
 @bot.tree.command(name="jambo", description="Anza uchambuzi wa lishe kwa Kiswahili")
 async def jambo_command(interaction: discord.Interaction):
     try:
+        if interaction.response.is_done():
+            return
+        
         embed = discord.Embed(
             title="🍎 Msaidizi wa Lishe",
             description="Chagua unachotaka msaada nao:",
@@ -273,13 +303,22 @@ async def jambo_command(interaction: discord.Interaction):
         )
         view = NutritionView('SW')
         await interaction.response.send_message(embed=embed, view=view)
+    except discord.errors.NotFound:
+        pass  # Interaction expired
     except Exception as e:
         logger.error(f"Error in jambo command: {e}")
-        await interaction.response.send_message("❌ Error occurred", ephemeral=True)
+        if not interaction.response.is_done():
+            try:
+                await interaction.response.send_message("❌ Error occurred", ephemeral=True)
+            except discord.errors.NotFound:
+                pass
 
 @bot.tree.command(name="muraho", description="Tangira isesengura ry'intungamubiri mu Kinyarwanda")
 async def muraho_command(interaction: discord.Interaction):
     try:
+        if interaction.response.is_done():
+            return
+        
         embed = discord.Embed(
             title="🍎 Umufasha w'Intungamubiri",
             description="Hitamo icyo ushaka ubufasha:",
@@ -287,9 +326,15 @@ async def muraho_command(interaction: discord.Interaction):
         )
         view = NutritionView('RW')
         await interaction.response.send_message(embed=embed, view=view)
+    except discord.errors.NotFound:
+        pass  # Interaction expired
     except Exception as e:
         logger.error(f"Error in muraho command: {e}")
-        await interaction.response.send_message("❌ Error occurred", ephemeral=True)
+        if not interaction.response.is_done():
+            try:
+                await interaction.response.send_message("❌ Error occurred", ephemeral=True)
+            except discord.errors.NotFound:
+                pass
 
 if __name__ == '__main__':
     bot.run(DISCORD_TOKEN)
