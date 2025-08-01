@@ -63,46 +63,26 @@ class NutritionView(discord.ui.View):
             'RW': {'recipes': '🥗 Guteka', 'nutrition': '📊 Indyo', 'mealprep': '🍽️ Gutegura', 'workout': '💪 Imyitozo'}
         }
         
-        labels = button_labels.get(language, button_labels['EN'])
-        
-        # Clear default items and add language-specific buttons
-        self.clear_items()
-        
-        self.add_item(discord.ui.Button(
-            label=labels['recipes'], 
-            style=discord.ButtonStyle.primary, 
-            custom_id='category_recipes',
-            callback=self.recipes_callback
-        ))
-        self.add_item(discord.ui.Button(
-            label=labels['nutrition'], 
-            style=discord.ButtonStyle.primary, 
-            custom_id='category_nutrition',
-            callback=self.nutrition_callback
-        ))
-        self.add_item(discord.ui.Button(
-            label=labels['mealprep'], 
-            style=discord.ButtonStyle.primary, 
-            custom_id='category_mealprep',
-            callback=self.mealprep_callback
-        ))
-        self.add_item(discord.ui.Button(
-            label=labels['workout'], 
-            style=discord.ButtonStyle.secondary, 
-            custom_id='category_workout',
-            callback=self.workout_callback
-        ))
+        self.labels = button_labels.get(language, button_labels['EN'])
     
-    async def recipes_callback(self, interaction):
+    @discord.ui.button(label='🥗 Recipes', style=discord.ButtonStyle.primary, custom_id='category_recipes')
+    async def recipes_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        button.label = self.labels['recipes']
         await self.handle_category(interaction, 'recipes')
     
-    async def nutrition_callback(self, interaction):
+    @discord.ui.button(label='📊 Nutrition', style=discord.ButtonStyle.primary, custom_id='category_nutrition')
+    async def nutrition_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        button.label = self.labels['nutrition']
         await self.handle_category(interaction, 'nutrition')
     
-    async def mealprep_callback(self, interaction):
+    @discord.ui.button(label='🍽️ Meal Prep', style=discord.ButtonStyle.primary, custom_id='category_mealprep')
+    async def mealprep_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        button.label = self.labels['mealprep']
         await self.handle_category(interaction, 'mealprep')
     
-    async def workout_callback(self, interaction):
+    @discord.ui.button(label='💪 Workout', style=discord.ButtonStyle.secondary, custom_id='category_workout')
+    async def workout_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        button.label = self.labels['workout']
         await self.handle_category(interaction, 'workout')
     
     async def handle_category(self, interaction: discord.Interaction, category: str):
