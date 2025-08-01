@@ -199,8 +199,13 @@ class NutritionModal(discord.ui.Modal):
             
             response = await send_to_lambda(payload)
             
+            # DEBUG: Log the actual response
+            logger.info(f"Lambda response: {json.dumps(response, indent=2) if response else 'None'}")
+            
             if response:
-                content = response.get('content', 'Thank you for your submission!')
+                # Lambda returns content nested under data.content
+                content = response.get('data', {}).get('content', 'Thank you for your submission!')
+                logger.info(f"Extracted content: {content}")
                 await interaction.followup.send(content)
             else:
                 await interaction.followup.send("Thank you for your submission! Processing your request...")
