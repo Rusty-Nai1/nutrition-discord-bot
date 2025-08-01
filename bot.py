@@ -54,20 +54,55 @@ class NutritionView(discord.ui.View):
         super().__init__(timeout=300)
         self.language = language
         
-    @discord.ui.button(label='🥗 Recipes', style=discord.ButtonStyle.primary, custom_id='category_recipes')
-    async def recipes(self, interaction: discord.Interaction, button: discord.ui.Button):
+        # Update button labels based on language
+        button_labels = {
+            'EN': {'recipes': '🥗 Recipes', 'nutrition': '📊 Nutrition', 'mealprep': '🍽️ Meal Prep', 'workout': '💪 Workout'},
+            'ES': {'recipes': '🥗 Recetas', 'nutrition': '📊 Nutrición', 'mealprep': '🍽️ Preparación', 'workout': '💪 Ejercicio'},
+            'FR': {'recipes': '🥗 Recettes', 'nutrition': '📊 Nutrition', 'mealprep': '🍽️ Préparation', 'workout': '💪 Exercice'},
+            'SW': {'recipes': '🥗 Mapishi', 'nutrition': '📊 Lishe', 'mealprep': '🍽️ Kuandaa', 'workout': '💪 Mazoezi'},
+            'RW': {'recipes': '🥗 Guteka', 'nutrition': '📊 Indyo', 'mealprep': '🍽️ Gutegura', 'workout': '💪 Imyitozo'}
+        }
+        
+        labels = button_labels.get(language, button_labels['EN'])
+        
+        # Clear default items and add language-specific buttons
+        self.clear_items()
+        
+        self.add_item(discord.ui.Button(
+            label=labels['recipes'], 
+            style=discord.ButtonStyle.primary, 
+            custom_id='category_recipes',
+            callback=self.recipes_callback
+        ))
+        self.add_item(discord.ui.Button(
+            label=labels['nutrition'], 
+            style=discord.ButtonStyle.primary, 
+            custom_id='category_nutrition',
+            callback=self.nutrition_callback
+        ))
+        self.add_item(discord.ui.Button(
+            label=labels['mealprep'], 
+            style=discord.ButtonStyle.primary, 
+            custom_id='category_mealprep',
+            callback=self.mealprep_callback
+        ))
+        self.add_item(discord.ui.Button(
+            label=labels['workout'], 
+            style=discord.ButtonStyle.secondary, 
+            custom_id='category_workout',
+            callback=self.workout_callback
+        ))
+    
+    async def recipes_callback(self, interaction):
         await self.handle_category(interaction, 'recipes')
     
-    @discord.ui.button(label='📊 Nutrition', style=discord.ButtonStyle.primary, custom_id='category_nutrition')
-    async def nutrition(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def nutrition_callback(self, interaction):
         await self.handle_category(interaction, 'nutrition')
     
-    @discord.ui.button(label='🍽️ Meal Prep', style=discord.ButtonStyle.primary, custom_id='category_mealprep')
-    async def mealprep(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def mealprep_callback(self, interaction):
         await self.handle_category(interaction, 'mealprep')
     
-    @discord.ui.button(label='💪 Workout', style=discord.ButtonStyle.secondary, custom_id='category_workout')
-    async def workout(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def workout_callback(self, interaction):
         await self.handle_category(interaction, 'workout')
     
     async def handle_category(self, interaction: discord.Interaction, category: str):
@@ -113,108 +148,59 @@ class NutritionModal(discord.ui.Modal):
         self.category = category
         self.language = language
         
-        # Use modal_data from Lambda if provided, otherwise fallback
+        # Use modal_data from Lambda to build form fields
         if modal_data and 'components' in modal_data:
-            for component in modal_data['components']:
-                if component.get('type') == 4:  # Text Input
-                    self.add_item(discord.ui.TextInput(
-                        label=component.get('label', 'Input')[:45],
-                        placeholder=component.get('placeholder', ''),
-                        style=discord.TextStyle.paragraph if component.get('style') == 2 else discord.TextStyle.short,
-                        max_length=component.get('max_length', 1000),
-                        required=component.get('required', False)
-                    ))
-        else:
-            # Fallback to original structure
-            if category == 'mealprep':
-                self.add_item(discord.ui.TextInput(
-                    label='Dietary Preferences'[:45],
-                    placeholder='e.g., vegetarian, gluten-free, low-carb...',
-                    max_length=500,
-                    required=False
-                ))
-                self.add_item(discord.ui.TextInput(
-                    label='Goals & Restrictions'[:45],
-                    placeholder='e.g., weight loss, muscle gain, allergies...',
-                    style=discord.TextStyle.paragraph,
-                    max_length=1000,
-                    required=False
-                ))
-            elif category == 'workout':
-                self.add_item(discord.ui.TextInput(
-                    label='Current Fitness Level'[:45],
-                    placeholder='e.g., beginner, intermediate, advanced...',
-                    max_length=300,
-                    required=False
-                ))
-                self.add_item(discord.ui.TextInput(
-                    label='Goals & Timeline'[:45],
-                    placeholder='e.g., lose 10 lbs in 3 months, gain muscle...',
-                    style=discord.TextStyle.paragraph,
-                    max_length=1000,
-                    required=False
-                ))
-            elif category == 'nutrition':
-                self.add_item(discord.ui.TextInput(
-                    label='Food/Meal to Analyze'[:45],
-                    placeholder='e.g., chicken caesar salad, protein shake...',
-                    max_length=500,
-                    required=True
-                ))
-                self.add_item(discord.ui.TextInput(
-                    label='Specific Questions'[:45],
-                    placeholder='e.g., calories, nutrients, healthiness...',
-                    style=discord.TextStyle.paragraph,
-                    max_length=1000,
-                    required=False
-                ))
-            else:  # recipes
-                self.add_item(discord.ui.TextInput(
-                    label='Recipe Request'[:45],
-                    placeholder='e.g., high protein breakfast, vegan dinner...',
-                    style=discord.TextStyle.paragraph,
-                    max_length=2000,
-                    required=True
-                ))
+            for component_row in modal_data['components']:
+                if component_row.get('type') == 1:  # Action Row
+                    for component in component_row.get('components', []):
+                        if component.get('type') == 4:  # Text Input
+                            text_input = discord.ui.TextInput(
+                                label=component.get('label', 'Input')[:45],
+                                placeholder=component.get('placeholder', ''),
+                                style=discord.TextStyle.paragraph if component.get('style') == 2 else discord.TextStyle.short,
+                                max_length=component.get('max_length', 1000),
+                                required=component.get('required', False)
+                            )
+                            text_input.custom_id = component.get('custom_id', 'field')
+                            self.add_item(text_input)
     
     async def on_submit(self, interaction: discord.Interaction):
         try:
             await interaction.response.defer(thinking=True)
             
-            # Collect form data
-            form_data = {}
+            # Build components structure matching Lambda's expected format
+            components = []
             for item in self.children:
                 if isinstance(item, discord.ui.TextInput):
-                    form_data[item.label.lower().replace(' ', '_')] = item.value
+                    components.append({
+                        'type': 1,
+                        'components': [{
+                            'type': 4,
+                            'custom_id': getattr(item, 'custom_id', 'field'),
+                            'value': item.value
+                        }]
+                    })
             
-            # Send to Lambda for processing
+            # Create Discord modal submit format
+            custom_id = f"nutrition_modal_{self.category}_{self.language}" if self.category != 'workout' else f"workout_modal_{self.language}"
+            
             payload = {
-                'type': 'form_submission',
-                'category': self.category,
-                'language': self.language,
-                'form_data': form_data,
-                'user_id': str(interaction.user.id),
-                'channel_id': str(interaction.channel.id)
+                "type": 5,  # MODAL_SUBMIT
+                "data": {
+                    "custom_id": custom_id,
+                    "components": components
+                },
+                "user": {
+                    "id": str(interaction.user.id)
+                },
+                "channel_id": str(interaction.channel.id)
             }
             
             response = await send_to_lambda(payload)
             
             if response:
                 content = response.get('content', 'Thank you for your submission!')
-                embeds = response.get('embeds', [])
-                
-                if embeds:
-                    embed_objects = []
-                    for embed_data in embeds:
-                        embed = discord.Embed(
-                            title=embed_data.get('title'),
-                            description=embed_data.get('description'),
-                            color=discord.Color.green()
-                        )
-                        embed_objects.append(embed)
-                    await interaction.followup.send(content=content, embeds=embed_objects)
-                else:
-                    await interaction.followup.send(content)
+                await interaction.followup.send(content)
             else:
                 await interaction.followup.send("Thank you for your submission! Processing your request...")
                 
@@ -230,7 +216,7 @@ async def on_ready():
         
         # Sync commands
         synced = await bot.tree.sync()
-        logger.info(f'Synced {len(synced)} slash commands')
+        logger.info(f'Synced {len(synced)} slash commands: {[cmd.name for cmd in synced]}')
         
     except Exception as e:
         logger.error(f'Error in on_ready: {e}')
